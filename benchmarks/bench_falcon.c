@@ -436,7 +436,7 @@ static void measure_vrfy_perf(unsigned char *m_out, unsigned long long *mlen_out
 /* 主程序                                                                */
 /* ==================================================================== */
 
-#define NUM_SIGN_ROUNDS  1000   /* 每种 K 值签名 1000 次 */
+#define NUM_SIGN_ROUNDS  10000  /* 每种 K 值签名 10000 次 */
 #define SAMPLER_ROUNDS   100    /* 批量采样重复轮数 */
 #define MSG_LEN          64     /* 消息长度 */
 
