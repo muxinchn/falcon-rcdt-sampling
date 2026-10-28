@@ -873,6 +873,9 @@ typedef struct {
 	fpr boundaries[FALCON_MAX_K + 1];
 	fpr inv_2tau2[FALCON_MAX_K];
 	const uint32_t *rcdt_tables[FALCON_MAX_K];
+	/* 性能测量：拒绝采样接受率统计（不影响算法逻辑） */
+	uint64_t accept_count;  /* 接受次数 */
+	uint64_t total_count;   /* 总采样尝试次数 */
 } sampler_context;
 
 int Zf(sampler)(void *ctx, fpr mu, fpr isigma);

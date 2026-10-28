@@ -1128,6 +1128,14 @@ Zf(set_k)(sampler_context *spc, int k_val, unsigned logn)
 		tau = falcon512_boundaries_tables[k_val][j + 1];
 		spc->inv_2tau2[j] = fpr_of_double(1.0 / (2.0 * tau * tau));
 	}
+
+	/*
+	 * Reset acceptance-rate counters. These track the rejection
+	 * sampling statistics (accepted / total attempts) so that the
+	 * acceptance probability p can be measured by callers.
+	 */
+	spc->accept_count = 0;
+	spc->total_count = 0;
 }
 
 /*
@@ -1264,6 +1272,13 @@ Zf(sampler)(void *ctx, fpr mu, fpr isigma)
 		fpr x;
 
 		/*
+		 * Count each rejection-sampling attempt so that the
+		 * acceptance probability p = accept_count / total_count
+		 * can be reported after sampling.
+		 */
+		spc->total_count++;
+
+		/*
 		 * Sample z for a Gaussian distribution. Then get a
 		 * random bit b to turn the sampling into a bimodal
 		 * distribution: if b = 1, we use z+1, otherwise we
@@ -1310,6 +1325,7 @@ Zf(sampler)(void *ctx, fpr mu, fpr isigma)
 			 * Rejection sampling was centered on r, but the
 			 * actual center is mu = s + r.
 			 */
+			spc->accept_count++;
 			return s + z;
 		}
 	}

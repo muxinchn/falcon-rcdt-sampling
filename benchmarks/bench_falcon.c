@@ -265,16 +265,18 @@ static double std_double(const double *arr, int n, double m)
  *
  * 对给定 K 值的采样器，批量生成 n 个系数，测量总时间。
  * 仅包含采样逻辑，不含 NTT、哈希、范数检查、签名编码。
+ * 同时统计拒绝采样的接受率 p = 接受次数 / 总采样尝试次数。
  *
  * 参数:
  *   n             多项式系数个数 (512 或 1024)
  *   k             分段数 K (1=基线, 2..16)
  *   repeat_rounds 重复轮数
  *   out_time_us   输出: 每轮批量采样时间数组 (微秒)
+ *   out_accept_rate 输出: 每轮接受率 p 数组 (accept_count / total_count)
  *   out_peak_mem  输出: 峰值工作内存 (bytes, 各轮相同)
  */
 static void measure_batch_sampler_perf(unsigned logn, int k, int repeat_rounds,
-	double *out_time_us, size_t *out_peak_mem)
+	double *out_time_us, double *out_accept_rate, size_t *out_peak_mem)
 {
 	size_t n = (size_t)1 << logn;
 	int16_t *coeffs;
@@ -313,6 +315,13 @@ static void measure_batch_sampler_perf(unsigned logn, int k, int repeat_rounds,
 		/* ===== 计时结束 ===== */
 
 		out_time_us[round] = (double)(t1 - t0) / 1000.0;
+
+		/* 读取本轮拒绝采样的接受率 p = 接受次数 / 总尝试次数 */
+		if (spc.total_count > 0) {
+			out_accept_rate[round] = (double)spc.accept_count / (double)spc.total_count;
+		} else {
+			out_accept_rate[round] = 0.0;
+		}
 	}
 
 	*out_peak_mem = mem_batch_sampler(logn);
@@ -446,7 +455,8 @@ int main(void)
 
 	/* CSV 表头 */
 	printf("test_case,sampler_type,batch_n,batch_time_us_mean,batch_time_us_std,"
-		"batch_peak_mem_bytes_mean,kg_time_us_mean,kg_time_us_std,"
+		"batch_peak_mem_bytes_mean,accept_rate_mean,accept_rate_std,"
+		"kg_time_us_mean,kg_time_us_std,"
 		"kg_peak_mem_bytes_mean,sign_time_us_mean,sign_time_us_std,"
 		"sign_peak_mem_bytes_mean,vrfy_time_us_mean,vrfy_time_us_std,"
 		"vrfy_peak_mem_bytes_mean\n");
@@ -455,11 +465,12 @@ int main(void)
 		int k = k_values[ki];
 		char sampler_type[32];
 		double *batch_times;
+		double *accept_rates;
 		double *kg_times;
 		double *sign_times;
 		double *vrfy_times;
 		size_t batch_peak_mem, kg_peak_mem, sign_peak_mem, vrfy_peak_mem;
-		double batch_mean, batch_std, kg_mean, kg_std;
+		double batch_mean, batch_std, acc_mean, acc_std, kg_mean, kg_std;
 		double sign_mean, sign_std, vrfy_mean, vrfy_std;
 		int valid_sign = 0, valid_vrfy = 0;
 		int round;
@@ -473,6 +484,7 @@ int main(void)
 		fprintf(stderr, "[%s] 正在测试 K=%d ...\n", test_case, k);
 
 		batch_times = (double *)malloc(SAMPLER_ROUNDS * sizeof(double));
+		accept_rates = (double *)malloc(SAMPLER_ROUNDS * sizeof(double));
 		kg_times = (double *)malloc(NUM_SIGN_ROUNDS * sizeof(double));
 		sign_times = (double *)malloc(NUM_SIGN_ROUNDS * sizeof(double));
 		vrfy_times = (double *)malloc(NUM_SIGN_ROUNDS * sizeof(double));
@@ -480,9 +492,11 @@ int main(void)
 		/* ---- 第一部分：隔离采样子模块测试 ---- */
 		FN_set_default_k(k);
 		measure_batch_sampler_perf(logn, k, SAMPLER_ROUNDS,
-			batch_times, &batch_peak_mem);
+			batch_times, accept_rates, &batch_peak_mem);
 		batch_mean = mean_double(batch_times, SAMPLER_ROUNDS);
 		batch_std = std_double(batch_times, SAMPLER_ROUNDS, batch_mean);
+		acc_mean = mean_double(accept_rates, SAMPLER_ROUNDS);
+		acc_std = std_double(accept_rates, SAMPLER_ROUNDS, acc_mean);
 
 		/* ---- 第二部分：完整算法全流程测试 ---- */
 		/* 为每个 K 值使用相同的密钥集合和消息集合 */
@@ -546,17 +560,20 @@ int main(void)
 		}
 
 		/* 输出 CSV 行 */
-		printf("%s,%s,%zu,%.3f,%.3f,%zu,%.3f,%.3f,%zu,%.3f,%.3f,%zu,%.3f,%.3f,%zu\n",
+		printf("%s,%s,%zu,%.3f,%.3f,%zu,%.6f,%.6f,%.3f,%.3f,%zu,%.3f,%.3f,%zu,%.3f,%.3f,%zu\n",
 			test_case, sampler_type, n,
 			batch_mean, batch_std, batch_peak_mem,
+			acc_mean, acc_std,
 			kg_mean, kg_std, kg_peak_mem,
 			sign_mean, sign_std, sign_peak_mem,
 			vrfy_mean, vrfy_std, vrfy_peak_mem);
 
-		fprintf(stderr, "  有效签名: %d/%d, 有效验签: %d/%d\n",
-			valid_sign, NUM_SIGN_ROUNDS, valid_vrfy, NUM_SIGN_ROUNDS);
+		fprintf(stderr, "  有效签名: %d/%d, 有效验签: %d/%d, 接受率 p=%.4f±%.4f\n",
+			valid_sign, NUM_SIGN_ROUNDS, valid_vrfy, NUM_SIGN_ROUNDS,
+			acc_mean, acc_std);
 
 		free(batch_times);
+		free(accept_rates);
 		free(kg_times);
 		free(sign_times);
 		free(vrfy_times);
