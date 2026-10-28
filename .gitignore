@@ -1,0 +1,23 @@
+# Build artifacts
+build/
+*.o
+*.obj
+*.exe
+*.a
+*.so
+*.dll
+
+# KAT output files
+*.rsp
+*.req
+
+# Editor/temp files
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Python cache
+__pycache__/
+*.pyc
