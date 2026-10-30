@@ -871,6 +871,8 @@ typedef struct {
 	/* K-segment multi-proposal fields */
 	int k;
 	fpr boundaries[FALCON_MAX_K + 1];
+	/* inv_boundaries[j] = 1 / boundaries[j], 预计算以避免采样热路径上的 fpr_inv */
+	fpr inv_boundaries[FALCON_MAX_K + 1];
 	fpr inv_2tau2[FALCON_MAX_K];
 	const uint32_t *rcdt_tables[FALCON_MAX_K];
 	/* Acceptance-rate measurement counters (accept / total attempts) */

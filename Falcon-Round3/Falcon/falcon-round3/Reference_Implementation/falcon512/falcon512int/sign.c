@@ -1116,6 +1116,11 @@ Zf(set_k)(sampler_context *spc, int k_val, unsigned logn)
 	 */
 	for (j = 0; j <= k_val; j++) {
 		spc->boundaries[j] = fpr_of_double(falcon512_boundaries_tables[k_val][j]);
+		/*
+		 * 预计算 inv_boundaries[j] = 1 / boundaries[j]，使采样器可以直接用
+		 * isigma 比较来选段，避免在热路径上调用 fpr_inv(isigma)（double 除法）。
+		 */
+		spc->inv_boundaries[j] = fpr_inv(spc->boundaries[j]);
 	}
 	for (j = 0; j < k_val; j++) {
 		double tau;
@@ -1219,7 +1224,7 @@ Zf(sampler)(void *ctx, fpr mu, fpr isigma)
 {
 	sampler_context *spc;
 	int s, j;
-	fpr r, dss, ccs, sigma, inv_2tau2;
+	fpr r, dss, ccs, inv_2tau2;
 	const uint32_t *rcdt;
 
 	spc = ctx;
@@ -1237,16 +1242,19 @@ Zf(sampler)(void *ctx, fpr mu, fpr isigma)
 	dss = fpr_half(fpr_sqr(isigma));
 
 	/*
-	 * Recover sigma = 1/isigma to select the segment.
-	 */
-	sigma = fpr_inv(isigma);
-
-	/*
-	 * Find segment index j such that boundaries[j] < sigma <= boundaries[j+1].
-	 * For K=1, j is always 0.
+	 * Select segment j using isigma directly against the precomputed
+	 * inv_boundaries[] (inv_boundaries[j] = 1/boundaries[j]).
+	 *
+	 * Segment j satisfies boundaries[j] < sigma <= boundaries[j+1],
+	 * which is equivalent to inv_boundaries[j+1] <= isigma < inv_boundaries[j].
+	 * Since inv_boundaries is decreasing, we advance j while
+	 * isigma < inv_boundaries[j+1] (i.e. sigma > boundaries[j+1]).
+	 *
+	 * This avoids the per-call fpr_inv(isigma) division present in the
+	 * naive K-segment implementation. For K=1 the loop body never runs.
 	 */
 	j = 0;
-	while (j < spc->k - 1 && fpr_lt(spc->boundaries[j + 1], sigma)) {
+	while (j < spc->k - 1 && fpr_lt(isigma, spc->inv_boundaries[j + 1])) {
 		j++;
 	}
 
